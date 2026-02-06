@@ -1,0 +1,5 @@
+{
+  "name": "NodeFlow JSON Editor",
+  "description": "A professional-grade JSON editor that visualizes data as an interactive node graph with auto-arrangement, real-time editing, and seamless file handling.",
+  "requestFramePermissions": []
+}
