@@ -6,6 +6,18 @@ import NodeCreatorModal from './components/NodeCreatorModal';
 import { transformJsonToTree, transformTreeToJson, updateNodeValue, updateNodeKey, deleteNode, findNodeInTree, generateId, reparentNode, getNodePath } from './utils/jsonUtils';
 import { TreeNode } from './types';
 
+const KofiIcon = ({ size = 20 }: { size?: number }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="currentColor" 
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.724c-.304 0-.551.247-.551.551V19.93c0 .304.247.551.551.551h15.244c4.322 0 4.881-4.225 4.881-4.225s.612-4.148 2.016-5.461c.421-.397 1.055-.453 1.055-1.847zm-5.698 3.597c.05 3.395-2.617 3.65-2.617 3.65H2.433V6.612h14.122s2.583.153 2.617 3.65c.036 3.738-1.558 3.618-1.127 5.618.318 1.481 1.062 1.956 1.062 1.956s-2.924-.044-2.126-5.291zm.992-6.611c-.042-3.344-2.636-3.411-2.636-3.411H4.661s2.583.153 2.617 3.65c.036 3.738-1.558 3.618-1.127 5.618.318 1.481 1.062 1.956 1.062 1.956s-2.023-.044-1.225-5.291z"/>
+  </svg>
+);
+
 const DEFAULT_JSON = {
   project: "NodeFlow JSON Editor",
   status: "Beta v1.2",
@@ -271,6 +283,32 @@ export default function App() {
               </div>
             )}
           </div>
+
+          <footer className="p-6 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <a 
+                href="https://github.com/marcusdavidalo" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-slate-500 hover:text-white transition-colors"
+                title="GitHub Profile"
+              >
+                <Github size={18} />
+              </a>
+              <a 
+                href="https://ko-fi.com/marcusdavidalo" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-slate-500 hover:text-indigo-400 transition-colors"
+                title="Support on Ko-fi"
+              >
+                <KofiIcon size={18} />
+              </a>
+            </div>
+            <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+              © 2024 MARCDAVID
+            </div>
+          </footer>
         </div>
       </aside>
 

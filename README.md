@@ -50,6 +50,7 @@ NodeFlow is a professional-grade JSON editor that visualizes data as an interact
 ## 📖 Usage
 
 - **Edit Keys & Values**: Click on any node label or value to edit it directly.
+- **Panning**: Hold the **Right Mouse Button** and drag to move the canvas.
 - **Rearrange Nodes**: Drag and drop nodes to organize your view.
 - **Reparenting**: Drop a node onto an 'object' or 'array' type node to move it under that parent.
 - **Add Nodes**: Use the context menus or buttons to add new items to your structured data.

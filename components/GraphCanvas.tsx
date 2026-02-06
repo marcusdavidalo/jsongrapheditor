@@ -30,11 +30,21 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
   
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.8 });
-  const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currentX: number, currentY: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string, offsetX: number, offsetY: number } | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   
   const [manualOffsets, setManualOffsets] = useState<Record<string, { x: number, y: number }>>({});
+
+  useEffect(() => {
+    if (selectedNodeId) {
+      setSelectedNodeIds(prev => new Set(prev).add(selectedNodeId));
+    } else {
+      setSelectedNodeIds(new Set());
+    }
+  }, [selectedNodeId]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -80,11 +90,13 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
   }, [baseLayout, manualOffsets]);
 
   const descendantIds = useMemo(() => {
-    if (!selectedNodeId) return new Set<string>();
-    const node = findNodeInTree(tree, selectedNodeId);
-    if (!node) return new Set<string>();
-    return new Set(getAllDescendantIds(node));
-  }, [selectedNodeId, tree]);
+    const all = new Set<string>();
+    selectedNodeIds.forEach(id => {
+      const node = findNodeInTree(tree, id);
+      if (node) getAllDescendantIds(node).forEach(dId => all.add(dId));
+    });
+    return all;
+  }, [selectedNodeIds, tree]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -95,64 +107,119 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
   const onDragNodeStart = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (!selectedNodeIds.has(id)) {
+      if (!e.shiftKey) {
+        setSelectedNodeIds(new Set([id]));
+        onSelectNode(id);
+      } else {
+        setSelectedNodeIds(prev => new Set(prev).add(id));
+      }
+    }
     setDraggingNode({ id, offsetX: e.clientX, offsetY: e.clientY });
-  }, []);
+  }, [selectedNodeIds, onSelectNode]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
 
-    const target = e.target as HTMLElement;
-    const isBackground = target === containerRef.current || target.id === 'transform-layer';
-    if (isBackground) {
-      onSelectNode(null);
+    if (e.button === 2) { // Right click
+      e.preventDefault();
+      setIsPanning(true);
+      return;
     }
 
-    if (!draggingNode) setIsDraggingCanvas(true);
+    if (e.button === 0) { // Left click
+      const target = e.target as HTMLElement;
+      const isBackground = target === containerRef.current || target.id === 'transform-layer' || target.tagName === 'svg';
+      
+      if (isBackground) {
+        if (!e.shiftKey) {
+          setSelectedNodeIds(new Set());
+          onSelectNode(null);
+        }
+        
+        const worldX = (e.clientX - rect.left - transform.x) / transform.scale;
+        const worldY = (e.clientY - rect.top - transform.y) / transform.scale;
+        setSelectionBox({ startX: worldX, startY: worldY, currentX: worldX, currentY: worldY });
+      }
+    }
   };
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (draggingNode) {
-      const dx = (e.clientX - draggingNode.offsetX) / transform.scale;
-      const dy = (e.clientY - draggingNode.offsetY) / transform.scale;
-      
-      setManualOffsets(prev => ({
-        ...prev,
-        [draggingNode.id]: {
-          x: (prev[draggingNode.id]?.x || 0) + dx,
-          y: (prev[draggingNode.id]?.y || 0) + dy
-        }
-      }));
-      setDraggingNode(prev => prev ? { ...prev, offsetX: e.clientX, offsetY: e.clientY } : null);
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
 
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const worldX = (e.clientX - rect.left - transform.x) / transform.scale;
-        const worldY = (e.clientY - rect.top - transform.y) / transform.scale;
-
-        let foundHover: string | null = null;
-        for (let i = 0; i < nodes.length; i++) {
-          const node = nodes[i];
-          if (node.id === draggingNode.id || node.type === 'primitive') continue;
-
-          if (worldX >= node.x && worldX <= node.x + 220 &&
-              worldY >= node.y && worldY <= node.y + 140) {
-            foundHover = node.id;
-            break;
-          }
-        }
-        setHoveredNodeId(foundHover);
-      }
-    } else if (isDraggingCanvas) {
+    if (isPanning) {
       setTransform(prev => ({
         ...prev,
         x: prev.x + e.movementX,
         y: prev.y + e.movementY
       }));
+      return;
     }
-  }, [draggingNode, isDraggingCanvas, transform.scale, transform.x, transform.y, nodes]);
+
+    if (selectionBox) {
+      const worldX = (e.clientX - rect.left - transform.x) / transform.scale;
+      const worldY = (e.clientY - rect.top - transform.y) / transform.scale;
+      setSelectionBox(prev => prev ? { ...prev, currentX: worldX, currentY: worldY } : null);
+      
+      // Real-time selection preview
+      const x1 = Math.min(selectionBox.startX, worldX);
+      const x2 = Math.max(selectionBox.startX, worldX);
+      const y1 = Math.min(selectionBox.startY, worldY);
+      const y2 = Math.max(selectionBox.startY, worldY);
+
+      const newSelection = new Set<string>(e.shiftKey ? selectedNodeIds : []);
+      nodes.forEach(node => {
+        if (node.x + 220 >= x1 && node.x <= x2 && node.y + 140 >= y1 && node.y <= y2) {
+          newSelection.add(node.id);
+        }
+      });
+      setSelectedNodeIds(newSelection);
+      return;
+    }
+
+    if (draggingNode) {
+      const dx = (e.clientX - draggingNode.offsetX) / transform.scale;
+      const dy = (e.clientY - draggingNode.offsetY) / transform.scale;
+      
+      const targets = selectedNodeIds.has(draggingNode.id) ? Array.from(selectedNodeIds) : [draggingNode.id];
+      
+      setManualOffsets(prev => {
+        const next = { ...prev };
+        targets.forEach(id => {
+          next[id] = {
+            x: (prev[id]?.x || 0) + dx,
+            y: (prev[id]?.y || 0) + dy
+          };
+        });
+        return next;
+      });
+      
+      setDraggingNode(prev => prev ? { ...prev, offsetX: e.clientX, offsetY: e.clientY } : null);
+
+      const worldX = (e.clientX - rect.left - transform.x) / transform.scale;
+      const worldY = (e.clientY - rect.top - transform.y) / transform.scale;
+
+      let foundHover: string | null = null;
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (targets.includes(node.id) || node.type === 'primitive') continue;
+
+        if (worldX >= node.x && worldX <= node.x + 220 &&
+            worldY >= node.y && worldY <= node.y + 140) {
+          foundHover = node.id;
+          break;
+        }
+      }
+      setHoveredNodeId(foundHover);
+    }
+  }, [draggingNode, isPanning, selectionBox, transform.scale, transform.x, transform.y, nodes, selectedNodeIds]);
 
   const handleMouseUp = useCallback(() => {
     if (draggingNode && hoveredNodeId) {
+      // Reparent all selected nodes if possible (or just the main one?)
+      // For now, let's keep it simple: only reparent the one actually being dragged under the mouse
       onReparent(draggingNode.id, hoveredNodeId);
       setManualOffsets(prev => {
         const next = { ...prev };
@@ -160,10 +227,18 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
         return next;
       });
     }
-    setIsDraggingCanvas(false);
+    
+    if (selectionBox) {
+      if (selectedNodeIds.size > 0) {
+        onSelectNode(Array.from(selectedNodeIds)[selectedNodeIds.size - 1]);
+      }
+    }
+
+    setIsPanning(false);
+    setSelectionBox(null);
     setDraggingNode(null);
     setHoveredNodeId(null);
-  }, [draggingNode, hoveredNodeId, onReparent]);
+  }, [draggingNode, hoveredNodeId, onReparent, selectionBox, selectedNodeIds, onSelectNode]);
 
   useEffect(() => {
     if (dimensions.width > 0 && transform.x === 0) {
@@ -174,12 +249,13 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
   return (
     <div 
       ref={containerRef}
-      className={`flex-1 w-full h-full overflow-hidden relative bg-slate-950 no-scrollbar ${isDraggingCanvas || draggingNode ? 'cursor-grabbing' : 'cursor-grab'}`}
+      className={`flex-1 w-full h-full overflow-hidden relative bg-slate-950 no-scrollbar ${isPanning || draggingNode ? 'cursor-grabbing' : 'cursor-grab'}`}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div 
         id="transform-layer"
@@ -202,7 +278,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
               .y(d => (d as any).y + 30);
               
             const isRelatedToDrag = draggingNode && (link.source.id === draggingNode.id || link.target.id === draggingNode.id);
-            const isRelatedToSelection = selectedNodeId && (link.source.id === selectedNodeId || descendantIds.has(link.source.id));
+            const isRelatedToSelection = selectedNodeIds.has(link.source.id) || descendantIds.has(link.source.id);
 
             return (
               <path
@@ -219,6 +295,18 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
           })}
         </svg>
 
+        {selectionBox && (
+          <div 
+            className="absolute border-2 border-indigo-500 bg-indigo-500/10 pointer-events-none z-[100]"
+            style={{
+              left: Math.min(selectionBox.startX, selectionBox.currentX),
+              top: Math.min(selectionBox.startY, selectionBox.currentY),
+              width: Math.abs(selectionBox.startX - selectionBox.currentX),
+              height: Math.abs(selectionBox.startY - selectionBox.currentY),
+            }}
+          />
+        )}
+
         {nodes.map(node => (
           <JsonNode 
             key={node.id} 
@@ -229,7 +317,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
             onPrepareAddChild={onPrepareAddChild}
             onDragStart={onDragNodeStart}
             onSelect={onSelectNode}
-            isSelected={selectedNodeId === node.id}
+            isSelected={selectedNodeIds.has(node.id)}
             isChildOfSelected={descendantIds.has(node.id)}
             isDraggingAnything={!!draggingNode}
             isDropTarget={hoveredNodeId === node.id}
